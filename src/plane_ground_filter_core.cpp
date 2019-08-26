@@ -60,6 +60,7 @@ void PlaneGroundFilter::Spin()
 {
 }
 
+// 移除较高的障碍
 void PlaneGroundFilter::clip_above(const pcl::PointCloud<VPoint>::Ptr in,
                                    const pcl::PointCloud<VPoint>::Ptr out)
 {
@@ -67,7 +68,7 @@ void PlaneGroundFilter::clip_above(const pcl::PointCloud<VPoint>::Ptr in,
 
     cliper.setInputCloud(in);
     pcl::PointIndices indices;
-#pragma omp for
+#pragma omp for                        //？？？为何没有并行for循环声明？
     for (size_t i = 0; i < in->points.size(); i++)
     {
         if (in->points[i].z > clip_height_)
@@ -80,6 +81,7 @@ void PlaneGroundFilter::clip_above(const pcl::PointCloud<VPoint>::Ptr in,
     cliper.filter(*out);
 }
 
+// 移除过远过近的障碍
 void PlaneGroundFilter::remove_close_far_pt(const pcl::PointCloud<VPoint>::Ptr in,
                                             const pcl::PointCloud<VPoint>::Ptr out)
 {
@@ -98,7 +100,7 @@ void PlaneGroundFilter::remove_close_far_pt(const pcl::PointCloud<VPoint>::Ptr i
         }
     }
     cliper.setIndices(boost::make_shared<pcl::PointIndices>(indices));
-    cliper.setNegative(true); //ture to remove the indices
+    cliper.setNegative(true); //ture to remove the indices，保留之外的点云
     cliper.filter(*out);
 }
 
@@ -120,11 +122,11 @@ void PlaneGroundFilter::estimate_plane_(void)
     // TODO: compare the efficiency.
     Eigen::Matrix3f cov;
     Eigen::Vector4f pc_mean;
-    pcl::computeMeanAndCovarianceMatrix(*g_ground_pc, cov, pc_mean);
-    // Singular Value Decomposition: SVD
+    pcl::computeMeanAndCovarianceMatrix(*g_ground_pc, cov, pc_mean);           // 计算协方差矩阵和均值
+    // Singular Value Decomposition: SVD 奇异值分解
     JacobiSVD<MatrixXf> svd(cov, Eigen::DecompositionOptions::ComputeFullU);
     // use the least singular vector as normal
-    normal_ = (svd.matrixU().col(2));
+    normal_ = (svd.matrixU().col(2));               // 获取Z轴特征向量，
     // mean ground seeds value
     Eigen::Vector3f seeds_mean = pc_mean.head<3>();
 
@@ -140,7 +142,7 @@ void PlaneGroundFilter::estimate_plane_(void)
     @brief Extract initial seeds of the given pointcloud sorted segment.
     This function filter ground seeds points accoring to heigt.
     This function will set the `g_ground_pc` to `g_seed_pc`.
-    @param p_sorted: sorted pointcloud
+    @param p_sorted: sorted pointcloud ， 根据z从小到大排序后的点云
     
     @param ::num_lpr_: num of LPR points
     @param ::th_seeds_: threshold distance of seeds
@@ -151,16 +153,16 @@ void PlaneGroundFilter::extract_initial_seeds_(const pcl::PointCloud<VPoint> &p_
     // LPR is the mean of low point representative
     double sum = 0;
     int cnt = 0;
-    // Calculate the mean height value.
+    // Calculate the mean height value.求出最低num_lpr_个点云高度的平均值
     for (int i = 0; i < p_sorted.points.size() && cnt < num_lpr_; i++)
     {
         sum += p_sorted.points[i].z;
         cnt++;
     }
-    double lpr_height = cnt != 0 ? sum / cnt : 0; // in case divide by 0
+    double lpr_height = cnt != 0 ? sum / cnt : 0; // in case divide by 0， 求出高度的平均值
     g_seeds_pc->clear();
     // iterate pointcloud, filter those height is less than lpr.height+th_seeds_
-    for (int i = 0; i < p_sorted.points.size(); i++)
+    for (int i = 0; i < p_sorted.points.size(); i++)         // 低于一定阈值的点集作为种子点集
     {
         if (p_sorted.points[i].z < lpr_height + th_seeds_)
         {
@@ -187,7 +189,7 @@ void PlaneGroundFilter::point_cb(const sensor_msgs::PointCloud2ConstPtr &in_clou
     pcl::PointCloud<VPoint> laserCloudIn_org;
     pcl::fromROSMsg(*in_cloud_ptr, laserCloudIn_org);
     // For mark ground points and hold all points
-    SLRPointXYZIRL point;
+    SLRPointXYZIRL point;      //定义SLR点数据格式
 
     for (size_t i = 0; i < laserCloudIn.points.size(); i++)
     {
@@ -195,13 +197,14 @@ void PlaneGroundFilter::point_cb(const sensor_msgs::PointCloud2ConstPtr &in_clou
         point.y = laserCloudIn.points[i].y;
         point.z = laserCloudIn.points[i].z;
         point.intensity = laserCloudIn.points[i].intensity;
-        point.ring = laserCloudIn.points[i].ring;
+        // point.ring = laserCloudIn.points[i].ring;
         point.label = 0u; // 0 means uncluster
         g_all_pc->points.push_back(point);
     }
     //std::vector<int> indices;
     //pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn,indices);
     // 2.Sort on Z-axis value.
+    //将点云在Z轴坐标上从小到大排序
     sort(laserCloudIn.points.begin(), laserCloudIn.end(), point_cmp);
     // 3.Error point removal
     // As there are some error mirror reflection under the ground,
@@ -219,14 +222,14 @@ void PlaneGroundFilter::point_cb(const sensor_msgs::PointCloud2ConstPtr &in_clou
             break;
         }
     }
-    laserCloudIn.points.erase(laserCloudIn.points.begin(), it);
-    // 4. Extract init ground seeds.
+    laserCloudIn.points.erase(laserCloudIn.points.begin(), it);  // 剔除较低的点云
+    // 4. Extract init ground seeds. 选取地面种子
     extract_initial_seeds_(laserCloudIn);
-    g_ground_pc = g_seeds_pc;
+    g_ground_pc = g_seeds_pc;                // 获取地面种子点
     // 5. Ground plane fitter mainloop
-    for (int i = 0; i < num_iter_; i++)
+    for (int i = 0; i < num_iter_; i++)      // 地面拟合迭代次数
     {
-        estimate_plane_();
+        estimate_plane_();                   // 拟合平面，求出平面的参数
         g_ground_pc->clear();
         g_not_ground_pc->clear();
 
@@ -238,7 +241,7 @@ void PlaneGroundFilter::point_cb(const sensor_msgs::PointCloud2ConstPtr &in_clou
             points.row(j++) << p.x, p.y, p.z;
         }
         // ground plane model
-        VectorXf result = points * normal_;
+        VectorXf result = points * normal_;     // 计算每一个点到该平面的正交投影的距离
         // threshold filter
         for (int r = 0; r < result.rows(); r++)
         {

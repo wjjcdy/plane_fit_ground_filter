@@ -24,14 +24,14 @@ namespace velodyne_pointcloud
 /** Euclidean Velodyne coordinate, including intensity and ring number. */
 struct PointXYZIR
 {
-  PCL_ADD_POINT4D;                // quad-word XYZ
-  float intensity;                ///< laser intensity reading
-  uint16_t ring;                  ///< laser ring number
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW // ensure proper alignment
-} EIGEN_ALIGN16;
+  PCL_ADD_POINT4D;                // quad-word XYZ 该点类型有4个元素
+  float intensity;                ///< laser intensity reading，强度
+  uint16_t ring;                  ///< laser ring number，环number，即第几环
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW // ensure proper alignment，用于内存对齐
+} EIGEN_ALIGN16;                  // 强制16进制对齐
 
 }; // namespace velodyne_pointcloud
-
+                                  // 注册此点有5个属性
 POINT_CLOUD_REGISTER_POINT_STRUCT(velodyne_pointcloud::PointXYZIR,
                                   (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(uint16_t, ring, ring))
 
@@ -80,7 +80,7 @@ private:
   // Here normal:=[a,b,c], d=d
   // th_dist_d_ = threshold_dist - d
   float d_, th_dist_d_;
-  MatrixXf normal_;
+  MatrixXf normal_;    //开辟动态向量，存储法向量
 
   // pcl::PointCloud<VPoint>::Ptr g_seeds_pc(new pcl::PointCloud<VPoint>());
   // pcl::PointCloud<VPoint>::Ptr g_ground_pc(new pcl::PointCloud<VPoint>());
